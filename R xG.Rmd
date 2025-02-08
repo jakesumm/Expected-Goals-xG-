@@ -1,0 +1,222 @@
+---
+title: "Clutch Goals xG"
+author: "Jake Summaria"
+output: pdf_document
+---
+
+```{r upload}
+library(ggplot2)
+library(dplyr)
+library(pROC)
+library(stringr)
+library(ggridges)
+library(tidyr)
+d = read.csv("C:\\Users\\Jake\\Downloads\\Major Goals (1).csv", header = TRUE, sep = ",")
+data <- d %>% filter(Event != "Fouled")
+```
+
+```{r part 1: Correlation}
+correlation <- cor(data$xG, data$Clutch)
+correlation
+```
+
+```{r part 2: Visualize}
+boxplot(xG ~ Clutch, data = data,
+        main = "Boxplot of xG by Clutch Goals",
+        xlab = "Clutch (1 = Yes, 0 = No)", ylab = "xG",
+        col = c("lightblue", "lightgreen"))
+
+ggplot(data, aes(x = factor(Clutch), y = xG)) +
+  geom_violin(trim = FALSE, fill = "lightblue") +
+  labs(title = "Violin Plot of xG by Clutch Status", 
+       x = "Clutch (1 = Yes, 0 = No)", 
+       y = "xG")
+
+ggplot(data, aes(x = xG, fill = factor(Clutch))) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Density Plot of xG by Clutch Status", x = "xG", fill = "Clutch") +
+  theme_minimal()
+
+```
+
+```{r part 3: LR}
+lm <- glm(Clutch ~ xG, data, family = binomial)
+probs <- predict(lm, type = "response")
+roc_curve <- roc(data$Clutch, probs)
+plot(roc_curve, main = "ROC curve")
+
+```
+
+```{r part 4: First}
+first_goals <- data %>%
+  group_by(Tournament, Round) %>%
+  filter(Minute == min(Minute)) %>%
+  select(Player, xG, Tournament, Round) %>%
+  mutate(Type = "First Goal")
+
+all_goals <- data %>%
+  select(xG, Player, Tournament, Round) %>%
+  mutate(Type = "Other Goal")
+combined <- bind_rows(first_goals, all_goals)
+
+bp1 <- boxplot(xG ~ Type, combined,
+        main = "Boxplot of xG by First/Other Goal",
+        xlab = "Clutch (1 = Yes, 0 = No)", ylab = "xG",
+        col = c("lightblue", "lightgreen"))
+ggplot(combined, aes(x = xG, fill = factor(Type))) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Density Plot of xG by First Goal", x = "xG", fill = "Goal Type") +
+  theme_minimal()
+bp1$stats
+```
+
+```{r part 5: Last}
+last_goals <- data %>%
+  group_by(Tournament, Round) %>%
+  filter(Minute == max(Minute)) %>%
+  select(Player, xG, Tournament, Round) %>%
+  mutate(Type = "Last Goal")
+
+all_goals <- data %>%
+  select(xG, Player, Tournament, Round) %>%
+  mutate(Type = "other Goal")
+combined <- bind_rows(last_goals, all_goals)
+
+bp2 <- boxplot(xG ~ Type, combined,
+        main = "Boxplot of xG by Last/Other Goal",
+        xlab = "Clutch (1 = Yes, 0 = No)", ylab = "xG",
+        col = c("lightblue", "lightgreen"))
+ggplot(combined, aes(x = xG, fill = factor(Type))) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Density Plot of xG by Last Goal", x = "xG", fill = "Goal Type") +
+  theme_minimal()
+
+bp2$stats
+```
+
+
+```{r part 7: game winning goal}
+data3 <- data %>%
+  group_by(Tournament, Round, Country) %>%
+  mutate(Team_Goals = row_number()) %>%
+  ungroup()
+data3 <- data3 %>%
+  group_by(Tournament, Round) %>%
+  mutate(
+    Team1_score = cumsum(Country == unique(Country)[1]),
+    Team2_score = cumsum(Country == unique(Country)[2])
+  ) %>%
+  ungroup()
+data3 <- data3 %>%
+  group_by(Tournament, Round) %>%
+  mutate(
+    IsGameWinningGoal = ifelse(
+      (Team1_score > Team2_score & lag(Team1_score) == Team2_score) |
+      (Team2_score > Team1_score & lag(Team2_score) == Team1_score),
+    1, 0
+    )
+  ) %>%
+  ungroup()
+game_winning_goals <- data3 %>%
+  filter(IsGameWinningGoal == 1) %>%
+  mutate(type = "Game Winning")
+other_goals <- data3 %>%
+  filter(IsGameWinningGoal == 0) %>%
+  mutate(type = "Other")
+comparison <- bind_rows(game_winning_goals, other_goals)
+ggplot(comparison, aes(x = type, y = xG, fill = type)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.5) +  # Adds individual points for clarity
+  labs(title = "Comparison of xG: Game-Winning Goals vs Other Goals", x = "Goal Type", y = "Expected Goals (xG)") +
+  theme_minimal() +
+  scale_fill_manual(values = c("Game-Winning" = "red", "Other" = "lightblue"))
+```
+
+```{r part 8: Round}
+data2 = data
+data2$Round = ifelse(str_detect(data2$Round, "\\d$"),
+                     str_sub(data$Round, end = -3),
+                     data2$Round)
+bp3 <- boxplot(xG ~ Round, data = data2,
+        main = "Boxplot of xG by Round",
+        xlab = "Round", ylab = "xG",
+        col = c("lightblue", "lightgreen"))
+ggplot(data2, aes(x = xG, fill = factor(Round))) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Density Plot of xG by Round", x = "xG", fill = "Round") +
+  theme_minimal()
+bp3$stats
+```
+
+```{r part 9: event}
+bp4 <- boxplot(xG ~ Event, data = data,
+        main = "Boxplot of xG by Event",
+        xlab = "Event", ylab = "xG",
+        col = c("lightblue", "lightgreen"))
+ggplot(data, aes(x = xG, fill = factor(Event))) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Density Plot of xG by Event", x = "xG", fill = "Event") +
+  theme_minimal()
+bp4$stats
+```
+```{r part 11: Tournament}
+bp5 <- boxplot(xG ~ Tournament, data,
+        main = "Boxplot of xG by Event",
+        xlab = "Tournament", ylab = "xG",
+        col = c("lightblue", "lightgreen"))
+ggplot(data, aes(x = xG, fill = factor(Tournament))) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Density Plot of xG by Tournament", x = "xG", fill = "Tournament") +
+  theme_minimal()
+bp5$stats
+```
+
+```{r part 10: Tests}
+t_test <- t.test(xG ~ Clutch, data)
+t_test_gw <- t.test(xG ~ type, comparison)
+anova <- aov(xG ~ Round, data2)
+goal_types <- bind_rows(first_goals, last_goals, all_goals)
+anova_type <- aov(xG ~ Type, combined)
+print(t_test)
+print(t_test_gw)
+summary(anova)
+summary(anova_type)
+```
+
+```{r part 99: minutes-clutch}
+data$TimeRange <- cut(data$Minute, breaks = c(0, 80, 85, 90, 100), 
+                      labels = c("First 80", "80-85", "85-90", "90+"))
+
+# Create a contingency table
+table_clutch_time <- table(data$Clutch, data$TimeRange)
+
+# Chi-square test to see if time range is associated with clutch goals
+chisq.test(table_clutch_time)
+```
+
+```{r part 11: conclusion}
+boxplot_data <- data.frame(
+  Category = c("First Goal", "Last Goal", "Final Round", "Semi-Finals", 
+               "Quarter-Finals", "Third-Place", "Round of 16", 
+               "Deflected", "Shot", "Volley"),
+  Min = c(0.03, 0.01, 0.04, 0.02, 0.01, 0.03, 0.02, 0.04, 0.01, 0.11),
+  Median = c(0.21, 0.16, 0.35, 0.255, 0.15, 0.12, 0.20, 0.12, 0.21, 0.205),
+  Max = c(0.7, 0.86, 0.86, 0.69, 0.38, 0.63, 0.69, 0.2, 0.7, 0.62)
+)
+boxplot_data$Category <- factor(boxplot_data$Category, 
+                                levels = c("First Goal", "Last Goal", 
+                                           "Final Round", "Semi-Finals", 
+                                           "Quarter-Finals", "Third-Place", 
+                                           "Round of 16", "Deflected", 
+                                           "Shot", "Volley"))
+long_boxplot_data <- boxplot_data %>%
+  pivot_longer(cols = c(Min, Median, Max), 
+               names_to = "Statistic", 
+               values_to = "xG")
+ggplot(long_boxplot_data, aes(x = Category, y = xG, fill = Statistic)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Summary of xG by Category", x = "Category", y = "xG") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_manual(values = c("Min" = "blue", "Median" = "green", "Max" = "red"))
+```
